@@ -29,8 +29,6 @@ namespace ObjectFinder.Vsix
             // we are not calling Dispose on this object. This is because ToolWindowPane calls Dispose on
             // the object returned by the Content property.
             var view = new SearchView();
-            view.SetObjects(SampleData.Create());
-            view.ObjectChosen += o => view.SetStatus("Chosen: " + o.FullName);
             Content = view;
         }
     }

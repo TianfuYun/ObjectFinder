@@ -11,22 +11,19 @@ namespace ObjectFinder.Vsix
     public partial class SearchView : UserControl
     {
         private ObjectSearcher _searcher = new ObjectSearcher(new DbObject[0]);
+        private string _source = "Select a database in Object Explorer, then press F5.";
+        private ObjectExplorerSelection _selection;
 
         public SearchView()
         {
             InitializeComponent();
-            Loaded += delegate { FocusSearchBox(); };
+            Loaded += delegate { FocusSearchBox(); Reload(true); };
+            IsVisibleChanged += OnIsVisibleChanged;
             UpdateResults();
         }
 
         /// <summary>Raised when the user presses Enter or double-clicks a result.</summary>
         public event Action<DbObject> ObjectChosen;
-
-        public void SetObjects(IEnumerable<DbObject> objects)
-        {
-            _searcher = new ObjectSearcher(objects);
-            UpdateResults();
-        }
 
         public void FocusSearchBox()
         {
@@ -37,6 +34,41 @@ namespace ObjectFinder.Vsix
         public void SetStatus(string text)
         {
             StatusText.Text = text;
+        }
+
+        /// <summary>
+        /// Re-reads the object list for the database selected in Object Explorer.
+        /// With keepCurrentOnFailure, a failed refresh (for example a server node is selected) leaves the
+        /// previous list in place instead of replacing it with an error message.
+        /// </summary>
+        public void Reload(bool keepCurrentOnFailure)
+        {
+            try
+            {
+                ObjectExplorerSelection selection = ObjectExplorerBridge.GetSelection();
+                List<DbObject> objects = ObjectExplorerBridge.LoadObjects(selection);
+
+                _searcher = new ObjectSearcher(objects);
+                _selection = selection;
+                _source = selection.DatabaseName + " on " + selection.ServerName + ": " + objects.Count + " objects";
+            }
+            catch (Exception ex)
+            {
+                if (keepCurrentOnFailure && _searcher.Count > 0)
+                    return;
+
+                _searcher = new ObjectSearcher(new DbObject[0]);
+                _selection = null;
+                _source = ex.Message;
+            }
+
+            UpdateResults();
+        }
+
+        private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if ((bool)e.NewValue)
+                Reload(true);
         }
 
         private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -51,6 +83,7 @@ namespace ObjectFinder.Vsix
                 case Key.Down: MoveSelection(1); e.Handled = true; break;
                 case Key.Up: MoveSelection(-1); e.Handled = true; break;
                 case Key.Enter: ChooseSelected(); e.Handled = true; break;
+                case Key.F5: Reload(false); e.Handled = true; break;
             }
         }
 
@@ -62,10 +95,20 @@ namespace ObjectFinder.Vsix
         private void UpdateResults()
         {
             string query = SearchBox.Text;
+
+            if (query.Trim() == "!diag")
+            {
+                ObjectExplorerDiagnostics.Run();
+                StatusText.Text = "Diagnostics written to " + DiagLog.FilePath;
+                return;
+            }
+
             if (string.IsNullOrWhiteSpace(query))
             {
                 ResultsList.ItemsSource = null;
-                StatusText.Text = _searcher.Count + " objects. Start typing to search.";
+                StatusText.Text = _searcher.Count > 0
+                    ? _source + ". Start typing to search, F5 reloads."
+                    : _source;
                 return;
             }
 
@@ -75,7 +118,7 @@ namespace ObjectFinder.Vsix
 
             ResultsList.ItemsSource = rows;
             if (rows.Count > 0) ResultsList.SelectedIndex = 0;
-            StatusText.Text = rows.Count == 0 ? "No matches." : rows.Count + " results";
+            StatusText.Text = rows.Count == 0 ? "No matches in " + _source : rows.Count + " results";
         }
 
         private void MoveSelection(int delta)
@@ -91,8 +134,26 @@ namespace ObjectFinder.Vsix
         private void ChooseSelected()
         {
             ResultRow row = ResultsList.SelectedItem as ResultRow;
-            if (row != null && ObjectChosen != null)
+            if (row == null) return;
+
+            if (ObjectChosen != null)
                 ObjectChosen(row.Object);
+
+            if (_selection == null)
+            {
+                StatusText.Text = "Nothing is loaded. Select a database in Object Explorer and press F5.";
+                return;
+            }
+
+            try
+            {
+                ObjectExplorerBridge.Reveal(_selection, row.Object);
+                StatusText.Text = "Selected " + row.Object.FullName + " in Object Explorer";
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = ex.Message;
+            }
         }
     }
 
@@ -122,30 +183,6 @@ namespace ObjectFinder.Vsix
                     default: return "Object";
                 }
             }
-        }
-    }
-
-    internal static class SampleData
-    {
-        public static IReadOnlyList<DbObject> Create()
-        {
-            return new[]
-            {
-                new DbObject("dbo", "spTranslate", DbObjectType.StoredProcedure),
-                new DbObject("dbo", "spTranslateAll", DbObjectType.StoredProcedure),
-                new DbObject("dbo", "spGetOrders", DbObjectType.StoredProcedure),
-                new DbObject("dbo", "sp_PrintMessage", DbObjectType.StoredProcedure),
-                new DbObject("dbo", "vwOrders", DbObjectType.View),
-                new DbObject("dbo", "vwOrderLinesWithPrices", DbObjectType.View),
-                new DbObject("dbo", "Orders", DbObjectType.Table),
-                new DbObject("dbo", "OrderLines", DbObjectType.Table),
-                new DbObject("dbo", "Products", DbObjectType.Table),
-                new DbObject("dbo", "fnGetPrice", DbObjectType.ScalarFunction),
-                new DbObject("dbo", "fnSplitString", DbObjectType.TableFunction),
-                new DbObject("sales", "Invoices", DbObjectType.Table),
-                new DbObject("sales", "vwSalesByMonth", DbObjectType.View),
-                new DbObject("dbo", "SynProducts", DbObjectType.Synonym),
-            };
         }
     }
 }
