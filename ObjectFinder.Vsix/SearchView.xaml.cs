@@ -378,6 +378,8 @@ namespace ObjectFinder.Vsix
                 Action handler = CloseRequested;
                 if (handler != null)
                     handler();
+
+                ObjectExplorerBridge.FocusObjectExplorerWindow();
             }
         }
 

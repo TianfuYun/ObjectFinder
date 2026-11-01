@@ -7,6 +7,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
+using EnvDTE;
 using Microsoft.VisualStudio.Shell;
 using ObjectFinder.Core;
 
@@ -164,6 +165,42 @@ namespace ObjectFinder.Vsix
 
             Reveal(context, target);
             OpenGeneratedScriptDocument(context, target, alter);
+        }
+
+        public static void FocusObjectExplorerWindow()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            DTE dte = Package.GetGlobalService(typeof(DTE)) as DTE;
+            if (dte == null)
+                return;
+
+            foreach (Window window in dte.Windows)
+            {
+                string caption;
+                try
+                {
+                    caption = window.Caption;
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (caption != null && caption.StartsWith("Object Explorer", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        window.Activate();
+                    }
+                    catch
+                    {
+                        // Best effort only.
+                    }
+
+                    return;
+                }
+            }
         }
 
         private static void OpenGeneratedScriptDocument(ObjectExplorerSelection context, DbObject target, bool alter)
