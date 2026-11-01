@@ -99,6 +99,10 @@ namespace ObjectFinder.Vsix
 
             IVsWindowFrame windowFrame = (IVsWindowFrame)window.Frame;
             Microsoft.VisualStudio.ErrorHandler.ThrowOnFailure(windowFrame.Show());
+
+            SearchView view = window.Content as SearchView;
+            if (view != null)
+                view.Activate();
         }
     }
 }

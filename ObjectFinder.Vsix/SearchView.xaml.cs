@@ -29,6 +29,7 @@ namespace ObjectFinder.Vsix
         {
             SearchBox.Focus();
             Keyboard.Focus(SearchBox);
+            SearchBox.SelectAll();
         }
 
         public void SetStatus(string text)
@@ -154,6 +155,17 @@ namespace ObjectFinder.Vsix
             {
                 StatusText.Text = ex.Message;
             }
+        }
+
+        public void Activate()
+        {
+            Reload(true);
+
+#pragma warning disable VSTHRD001 // Deliberate: Input priority runs after the window frame has finished showing.
+            _ = Dispatcher.BeginInvoke(
+                new Action(FocusSearchBox),
+                System.Windows.Threading.DispatcherPriority.Input);
+#pragma warning restore VSTHRD001
         }
     }
 

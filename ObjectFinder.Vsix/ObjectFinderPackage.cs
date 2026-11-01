@@ -24,7 +24,6 @@ namespace ObjectFinder.Vsix
 
             await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             await ObjectFinder.Vsix.ObjectFinderToolWindowCommand.InitializeAsync(this);
-            await ObjectFinder.Vsix.ShowSearchCommand.InitializeAsync(this);
         }
     }
 }
