@@ -55,4 +55,4 @@ dotnet test ObjectFinderCore/tests/ObjectFinder.Core.Tests/ObjectFinder.Core.Tes
 
 ## License
 
-No license file is currently included. Add one before publishing if you want clear reuse terms.
+This project is licensed under the [MIT License](LICENSE).
