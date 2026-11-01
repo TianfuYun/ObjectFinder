@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Microsoft.VisualStudio.Shell;
 using ObjectFinder.Core;
 
 namespace ObjectFinder.Vsix
@@ -166,6 +167,66 @@ namespace ObjectFinder.Vsix
             ChooseSelected();
         }
 
+        private void AlterLink_Click(object sender, RoutedEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            e.Handled = true;
+            OpenScriptFromLink(sender as FrameworkContentElement, true);
+        }
+
+        private void CreateLink_Click(object sender, RoutedEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            e.Handled = true;
+            OpenScriptFromLink(sender as FrameworkContentElement, false);
+        }
+
+        private void OpenScriptFromLink(FrameworkContentElement link, bool alter)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            ResultRow row = link == null ? null : link.DataContext as ResultRow;
+            if (row == null)
+                return;
+
+            OpenScript(row.Object, alter);
+        }
+
+        private void OpenScript(DbObject target, bool alter)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            if (_selection == null)
+            {
+                StatusText.Text = "Nothing is loaded. Select a database in Object Explorer and press F5.";
+                return;
+            }
+
+            string verb = alter ? "ALTER" : "CREATE";
+            StatusText.Text = "Opening " + verb + " script for " + target.FullName + "...";
+            Mouse.OverrideCursor = Cursors.Wait;
+
+#pragma warning disable VSTHRD001 // Deliberate: the next call blocks the UI thread for seconds.
+            Dispatcher.Invoke(new Action(delegate { }), System.Windows.Threading.DispatcherPriority.Render);
+#pragma warning restore VSTHRD001
+
+            try
+            {
+                ObjectExplorerBridge.OpenScriptInNewQuery(_selection, target, alter);
+                StatusText.Text = verb + " script opened for " + target.FullName + ".";
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = ex.Message;
+            }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+            }
+        }
+
         private void UpdateResults()
         {
             string query = SearchBox.Text;
@@ -271,6 +332,7 @@ namespace ObjectFinder.Vsix
         public DbObject Object { get; }
         public string Name => Object.Name;
         public string Schema => Object.Schema;
+        public Visibility AlterLinkVisibility => Object.Type == DbObjectType.Table ? Visibility.Collapsed : Visibility.Visible;
 
         public string TypeText
         {

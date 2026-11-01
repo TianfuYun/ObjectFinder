@@ -29,6 +29,15 @@
                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
                         <TextBlock Text="{Binding Schema}" Opacity="0.65" Margin="8,0,0,0" />
                         <TextBlock Text="{Binding TypeText}" Opacity="0.65" Margin="8,0,0,0" />
+                        <StackPanel Orientation="Horizontal" Margin="10,0,0,0">
+                            <TextBlock Opacity="0.85" Visibility="{Binding AlterLinkVisibility}">
+                                <Hyperlink Click="AlterLink_Click">ALTER</Hyperlink>
+                            </TextBlock>
+                            <TextBlock Opacity="0.85" Text=" | " Visibility="{Binding AlterLinkVisibility}" />
+                            <TextBlock Opacity="0.85">
+                                <Hyperlink Click="CreateLink_Click">CREATE</Hyperlink>
+                            </TextBlock>
+                        </StackPanel>
                     </StackPanel>
                 </DataTemplate>
             </ListBox.ItemTemplate>
