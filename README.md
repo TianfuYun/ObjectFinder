@@ -1,6 +1,7 @@
 # ObjectFinder
 
 ObjectFinder is an SSMS extension that helps you quickly find database objects (tables, views, procedures, functions, synonyms) from the currently selected database in Object Explorer.
+<img width="839" height="620" alt="image" src="https://github.com/user-attachments/assets/7418dd7d-529e-48fa-882b-3baea940f9aa" />
 
 ## Features
 
