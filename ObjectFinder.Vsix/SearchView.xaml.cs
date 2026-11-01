@@ -20,11 +20,7 @@ namespace ObjectFinder.Vsix
         public SearchView()
         {
             InitializeComponent();
-            Loaded += async delegate
-            {
-                FocusSearchBox();
-                await ReloadAsync(true);
-            };
+            Loaded += OnLoaded;
             IsVisibleChanged += OnIsVisibleChanged;
             PreviewKeyDown += OnViewPreviewKeyDown;
             UpdateResults();
@@ -46,6 +42,12 @@ namespace ObjectFinder.Vsix
         public void SetStatus(string text)
         {
             StatusText.Text = text;
+        }
+
+        private void OnLoaded(object sender, RoutedEventArgs e)
+        {
+            FocusSearchBox();
+            _ = ReloadAsync(true);
         }
 
         /// <summary>
@@ -104,10 +106,10 @@ namespace ObjectFinder.Vsix
             UpdateResults();
         }
 
-        private async void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
         {
             if ((bool)e.NewValue)
-                await ReloadAsync(true);
+                _ = ReloadAsync(true);
         }
 
         private void OnViewPreviewKeyDown(object sender, KeyEventArgs e)
@@ -126,7 +128,7 @@ namespace ObjectFinder.Vsix
             UpdateResults();
         }
 
-        private async void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        private void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             switch (e.Key)
             {
@@ -135,7 +137,7 @@ namespace ObjectFinder.Vsix
                 case Key.Enter: ChooseSelected(); e.Handled = true; break;
                 case Key.F5:
                     e.Handled = true;
-                    await ReloadAsync(false);
+                    _ = ReloadAsync(false);
                     break;
             }
         }
@@ -200,10 +202,11 @@ namespace ObjectFinder.Vsix
             Dispatcher.Invoke(new Action(delegate { }), System.Windows.Threading.DispatcherPriority.Render);
 #pragma warning restore VSTHRD001
 
+            bool selected = false;
             try
             {
                 ObjectExplorerBridge.Reveal(_selection, row.Object);
-                StatusText.Text = "Selected " + row.Object.FullName + " in Object Explorer";
+                selected = true;
             }
             catch (Exception ex)
             {
@@ -213,9 +216,21 @@ namespace ObjectFinder.Vsix
             {
                 Mouse.OverrideCursor = null;
             }
+
+            if (selected)
+            {
+                Action handler = CloseRequested;
+                if (handler != null)
+                    handler();
+            }
         }
 
-        public async void Activate()
+        public void Activate()
+        {
+            _ = ActivateAsync();
+        }
+
+        private async Task ActivateAsync()
         {
             await ReloadAsync(true);
 
