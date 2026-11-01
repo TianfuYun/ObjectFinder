@@ -124,7 +124,12 @@ namespace ObjectFinder.Vsix
             if (e.Key != Key.Escape || Keyboard.Modifiers != ModifierKeys.None)
                 return;
 
+            RequestClose();
             e.Handled = true;
+        }
+
+        private void RequestClose()
+        {
             Action handler = CloseRequested;
             if (handler != null)
                 handler();
@@ -142,6 +147,13 @@ namespace ObjectFinder.Vsix
                 case Key.Down: MoveSelection(1); e.Handled = true; break;
                 case Key.Up: MoveSelection(-1); e.Handled = true; break;
                 case Key.Enter: ChooseSelected(); e.Handled = true; break;
+                case Key.Escape:
+                    if (Keyboard.Modifiers == ModifierKeys.None)
+                    {
+                        RequestClose();
+                        e.Handled = true;
+                    }
+                    break;
                 case Key.F5:
                     e.Handled = true;
                     _ = ReloadAsync(false);
