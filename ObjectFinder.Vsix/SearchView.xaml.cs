@@ -57,10 +57,23 @@ namespace ObjectFinder.Vsix
 
         private void OnUnloaded(object sender, RoutedEventArgs e)
         {
+            CancelPendingReload();
+            Mouse.OverrideCursor = null;
+
             if (_hostWindow != null)
             {
                 _hostWindow.RemoveHandler(Keyboard.PreviewKeyDownEvent, new KeyEventHandler(OnHostPreviewKeyDown));
                 _hostWindow = null;
+            }
+        }
+
+        private void CancelPendingReload()
+        {
+            CancellationTokenSource current = Interlocked.Exchange(ref _reloadTokenSource, null);
+            if (current != null)
+            {
+                current.Cancel();
+                current.Dispose();
             }
         }
 
@@ -100,7 +113,7 @@ namespace ObjectFinder.Vsix
 
             CancellationToken cancellationToken = currentReload.Token;
 
-            await _reloadGate.WaitAsync();
+            await _reloadGate.WaitAsync(cancellationToken);
             try
             {
                 if (cancellationToken.IsCancellationRequested)

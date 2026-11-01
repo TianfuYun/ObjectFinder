@@ -1,13 +1,13 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
 	<Metadata>
-		<Identity Id="ObjectFinder.Vsix.57cc9fb3-c767-41ad-b8fe-a5275f06158f" Version="1.0" Language="en-US" Publisher="TianfuY" />
+		<Identity Id="ObjectFinder.Vsix.57cc9fb3-c767-41ad-b8fe-a5275f06158f" Version="1.0.0" Language="en-US" Publisher="TianfuY" />
 		<DisplayName>ObjectFinder</DisplayName>
-		<Description xml:space="preserve">Object Finder extension for SSMS.</Description>
-		<MoreInfo>https://example.com/objectfinder</MoreInfo>
+		<Description xml:space="preserve">Fast database object search for SQL Server Management Studio (SSMS).</Description>
+		<MoreInfo>https://github.com/TianfuYun/ObjectFinder</MoreInfo>
 	</Metadata>
 	<Installation>
-		<InstallationTarget Id="Microsoft.VisualStudio.Ssms" Version="[21.0,23.0)">
+		<InstallationTarget Id="Microsoft.VisualStudio.Ssms" Version="[20.0,24.0)">
 			<ProductArchitecture>amd64</ProductArchitecture>
 		</InstallationTarget>
 	</Installation>
@@ -16,6 +16,6 @@
 	</Prerequisites>
 	<Assets>
 		<Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
-	  <Asset Type="Microsoft.VisualStudio.MefComponent" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%|" />
-  </Assets>
+		<Asset Type="Microsoft.VisualStudio.MefComponent" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%|" />
+	</Assets>
 </PackageManifest>

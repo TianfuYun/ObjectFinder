@@ -9,7 +9,7 @@
       <!-- Opens (or re-activates) the Object Finder window. Lives on the Tools menu. -->
       <Button guid="guidObjectFinderPackageCmdSet" id="ObjectFinderToolWindowCommandId" priority="0x0100" type="Button">
         <Parent guid="guidSHLMainMenu" id="IDG_VS_TOOLS_EXT_CUST" />
-        <Icon guid="guidImages" id="bmpPic1" />
+        <Icon guid="guidImages" id="bmpPicSearch" />
         <Strings>
           <ButtonText>Object Finder</ButtonText>
         </Strings>

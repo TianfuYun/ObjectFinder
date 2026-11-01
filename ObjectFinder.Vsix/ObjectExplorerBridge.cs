@@ -35,8 +35,11 @@ namespace ObjectFinder.Vsix
     /// </summary>
     internal static class ObjectExplorerBridge
     {
-        private const string ServiceTypeName =
-            "Microsoft.SqlServer.Management.UI.VSIntegration.ObjectExplorer.IObjectExplorerService";
+        private static readonly string[] ServiceTypeNames =
+        {
+            "Microsoft.SqlServer.Management.UI.VSIntegration.ObjectExplorer.IObjectExplorerService",
+            "Microsoft.SqlServer.Management.UI.VSIntegration.ObjectExplorer.ObjectExplorerService",
+        };
 
         // Object Explorer exposes each node's path as a URN such as
         //   Server[@Name='HOST']/Database[@Name='Sandbox']/Table[@Name='Orders' and @Schema='dbo']
@@ -55,10 +58,7 @@ namespace ObjectFinder.Vsix
         {
             object service = GetService();
 
-            object[] args = { 0, null };
-            _getSelectedNodes.Invoke(service, args);
-
-            Array nodes = args[1] as Array;
+            Array nodes = GetSelectedNodes(service);
             if (nodes == null || nodes.Length == 0)
                 throw new InvalidOperationException("Select a database in Object Explorer, then press F5.");
 
@@ -87,15 +87,15 @@ namespace ObjectFinder.Vsix
         {
             string sql = BuildObjectQuery(selection.DatabaseName);
 
-            MethodInfo execute = selection.ServerConnection.GetType()
-                .GetMethod("ExecuteWithResults", new[] { typeof(string) });
+            MethodInfo execute = FindExecuteWithResultsMethod(selection.ServerConnection.GetType());
             if (execute == null)
                 throw new InvalidOperationException("This SSMS version's connection cannot run queries the way ObjectFinder expects.");
 
             DataSet result;
             try
             {
-                result = execute.Invoke(selection.ServerConnection, new object[] { sql }) as DataSet;
+                object raw = InvokeMethodWithFirstArgument(execute, selection.ServerConnection, sql);
+                result = ExtractDataSet(raw);
             }
             catch (TargetInvocationException ex)
             {
@@ -137,7 +137,7 @@ namespace ObjectFinder.Vsix
             object nodeInfo;
             try
             {
-                nodeInfo = find.Invoke(service, new object[] { urn });
+                nodeInfo = InvokeMethodWithFirstArgument(find, service, urn);
             }
             catch (TargetInvocationException ex)
             {
@@ -150,7 +150,7 @@ namespace ObjectFinder.Vsix
 
             try
             {
-                synchronize.Invoke(service, new object[] { nodeInfo });
+                InvokeMethodWithFirstArgument(synchronize, service, nodeInfo);
             }
             catch (TargetInvocationException ex)
             {
@@ -339,7 +339,7 @@ namespace ObjectFinder.Vsix
             return value.Replace("'", "''");
         }
 
-        /// <summary>Finds a one-parameter method on the service interface; the error lists what is actually there.</summary>
+        /// <summary>Finds a service method where the first parameter matches and trailing parameters can be defaulted.</summary>
         private static MethodInfo FindServiceMethod(string name, Type parameterType)
         {
             MethodInfo[] all = _serviceType.GetMethods().Where(m => m.Name == name).ToArray();
@@ -347,7 +347,17 @@ namespace ObjectFinder.Vsix
             MethodInfo match = all.FirstOrDefault(m =>
             {
                 ParameterInfo[] parameters = m.GetParameters();
-                return parameters.Length == 1 && (parameterType == null || parameters[0].ParameterType == parameterType);
+                if (parameters.Length == 0)
+                    return false;
+
+                if (parameterType != null)
+                {
+                    Type first = parameters[0].ParameterType;
+                    if (!(first == parameterType || first.IsAssignableFrom(parameterType) || parameterType.IsAssignableFrom(first)))
+                        return false;
+                }
+
+                return parameters.Skip(1).All(p => p.IsOptional || p.HasDefaultValue);
             });
 
             if (match != null) return match;
@@ -356,6 +366,62 @@ namespace ObjectFinder.Vsix
                 ? "no method with that name"
                 : string.Join("; ", all.Select(m => m.Name + "(" + string.Join(", ", m.GetParameters().Select(p => p.ParameterType.Name)) + ")"));
             throw new InvalidOperationException("Object Explorer's " + name + " does not have the expected shape in this SSMS version (" + found + ").");
+        }
+
+        private static MethodInfo FindExecuteWithResultsMethod(Type connectionType)
+        {
+            return connectionType
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(m => m.Name == "ExecuteWithResults")
+                .FirstOrDefault(m =>
+                {
+                    ParameterInfo[] parameters = m.GetParameters();
+                    return parameters.Length > 0
+                        && parameters[0].ParameterType == typeof(string)
+                        && parameters.Skip(1).All(p => p.IsOptional || p.HasDefaultValue);
+                });
+        }
+
+        private static object InvokeMethodWithFirstArgument(MethodInfo method, object target, object firstArgument)
+        {
+            ParameterInfo[] parameters = method.GetParameters();
+            var args = new object[parameters.Length];
+
+            if (args.Length > 0)
+                args[0] = firstArgument;
+
+            for (int i = 1; i < parameters.Length; i++)
+            {
+                ParameterInfo parameter = parameters[i];
+                if (parameter.HasDefaultValue)
+                {
+                    args[i] = parameter.DefaultValue;
+                }
+                else if (parameter.IsOptional)
+                {
+                    args[i] = Type.Missing;
+                }
+                else
+                {
+                    args[i] = parameter.ParameterType.IsValueType
+                        ? Activator.CreateInstance(parameter.ParameterType)
+                        : null;
+                }
+            }
+
+            return method.Invoke(target, args);
+        }
+
+        private static DataSet ExtractDataSet(object rawResult)
+        {
+            if (rawResult == null)
+                return null;
+
+            DataSet direct = rawResult as DataSet;
+            if (direct != null)
+                return direct;
+
+            return GetProperty(rawResult, "DataSet") as DataSet;
         }
 
         /// <summary>
@@ -387,12 +453,12 @@ namespace ObjectFinder.Vsix
         private static object GetService()
         {
             if (_serviceType == null)
-                _serviceType = FindType(ServiceTypeName);
+                _serviceType = ResolveServiceType();
             if (_serviceType == null)
                 throw new InvalidOperationException("Object Explorer was not found. This SSMS version may not be supported.");
 
             if (_getSelectedNodes == null)
-                _getSelectedNodes = _serviceType.GetMethod("GetSelectedNodes");
+                _getSelectedNodes = ResolveGetSelectedNodesMethod(_serviceType);
             if (_getSelectedNodes == null)
                 throw new InvalidOperationException("Object Explorer does not expose its selection in this SSMS version.");
 
@@ -401,6 +467,99 @@ namespace ObjectFinder.Vsix
                 throw new InvalidOperationException("Object Explorer is not available yet.");
 
             return service;
+        }
+
+        private static Type ResolveServiceType()
+        {
+            foreach (string typeName in ServiceTypeNames)
+            {
+                Type byName = FindType(typeName);
+                if (byName != null)
+                    return byName;
+            }
+
+            return FindObjectExplorerServiceTypeByName();
+        }
+
+        private static Type FindObjectExplorerServiceTypeByName()
+        {
+            foreach (Assembly assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (assembly.IsDynamic)
+                    continue;
+
+                Type[] types;
+                try
+                {
+                    types = assembly.GetTypes();
+                }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    types = ex.Types;
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (types == null)
+                    continue;
+
+                Type match = types.FirstOrDefault(type =>
+                    type != null
+                    && type.IsInterface
+                    && string.Equals(type.Name, "IObjectExplorerService", StringComparison.Ordinal));
+                if (match != null)
+                    return match;
+            }
+
+            return null;
+        }
+
+        private static MethodInfo ResolveGetSelectedNodesMethod(Type serviceType)
+        {
+            return serviceType
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(m => string.Equals(m.Name, "GetSelectedNodes", StringComparison.Ordinal))
+                .FirstOrDefault(m =>
+                {
+                    ParameterInfo[] parameters = m.GetParameters();
+                    return parameters.Length == 0
+                        || (parameters.Length == 2 && parameters[1].ParameterType.IsByRef)
+                        || (parameters.Length == 2 && parameters[1].ParameterType == typeof(Array));
+                });
+        }
+
+        private static Array GetSelectedNodes(object service)
+        {
+            ParameterInfo[] parameters = _getSelectedNodes.GetParameters();
+
+            if (parameters.Length == 0)
+            {
+                return ToObjectArray(_getSelectedNodes.Invoke(service, null));
+            }
+
+            object[] args = parameters.Length == 2
+                ? new object[] { 0, null }
+                : new object[parameters.Length];
+            if (args.Length > 0 && args[0] == null)
+                args[0] = 0;
+
+            object result = _getSelectedNodes.Invoke(service, args);
+            return ToObjectArray(args.Length > 1 ? args[1] : result);
+        }
+
+        private static Array ToObjectArray(object value)
+        {
+            Array array = value as Array;
+            if (array != null)
+                return array;
+
+            IEnumerable enumerable = value as IEnumerable;
+            if (enumerable == null)
+                return null;
+
+            return enumerable.Cast<object>().ToArray();
         }
 
         private static object GetProperty(object obj, string name)
