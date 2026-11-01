@@ -18,13 +18,15 @@ namespace ObjectFinder.Vsix
         private ObjectExplorerSelection _selection;
         private CancellationTokenSource _reloadTokenSource;
         private readonly SemaphoreSlim _reloadGate = new SemaphoreSlim(1, 1);
+        private Window _hostWindow;
 
         public SearchView()
         {
             InitializeComponent();
             Loaded += OnLoaded;
+            Unloaded += OnUnloaded;
             IsVisibleChanged += OnIsVisibleChanged;
-            PreviewKeyDown += OnViewPreviewKeyDown;
+            AddHandler(Keyboard.PreviewKeyDownEvent, new KeyEventHandler(OnViewPreviewKeyDown), true);
             UpdateResults();
         }
 
@@ -48,8 +50,37 @@ namespace ObjectFinder.Vsix
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
+            HookHostWindowKeyHandling();
             FocusSearchBox();
             _ = ReloadAsync(true);
+        }
+
+        private void OnUnloaded(object sender, RoutedEventArgs e)
+        {
+            if (_hostWindow != null)
+            {
+                _hostWindow.RemoveHandler(Keyboard.PreviewKeyDownEvent, new KeyEventHandler(OnHostPreviewKeyDown));
+                _hostWindow = null;
+            }
+        }
+
+        private void HookHostWindowKeyHandling()
+        {
+            if (_hostWindow != null)
+                return;
+
+            _hostWindow = Window.GetWindow(this);
+            if (_hostWindow != null)
+                _hostWindow.AddHandler(Keyboard.PreviewKeyDownEvent, new KeyEventHandler(OnHostPreviewKeyDown), true);
+        }
+
+        private void OnHostPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (!IsVisible || !IsEscapeKey(e))
+                return;
+
+            RequestClose();
+            e.Handled = true;
         }
 
         /// <summary>
@@ -122,11 +153,17 @@ namespace ObjectFinder.Vsix
 
         private void OnViewPreviewKeyDown(object sender, KeyEventArgs e)
         {
-            if (e.Key != Key.Escape || Keyboard.Modifiers != ModifierKeys.None)
+            if (!IsEscapeKey(e))
                 return;
 
             RequestClose();
             e.Handled = true;
+        }
+
+        private static bool IsEscapeKey(KeyEventArgs e)
+        {
+            return (e.Key == Key.Escape || e.SystemKey == Key.Escape)
+                && Keyboard.Modifiers == ModifierKeys.None;
         }
 
         private void RequestClose()
@@ -143,6 +180,8 @@ namespace ObjectFinder.Vsix
 
         private void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
             switch (e.Key)
             {
                 case Key.Down: MoveSelection(1); e.Handled = true; break;
@@ -164,7 +203,23 @@ namespace ObjectFinder.Vsix
 
         private void ResultsList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
             ChooseSelected();
+        }
+
+        private void NameLink_Click(object sender, RoutedEventArgs e)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            e.Handled = true;
+            FrameworkContentElement link = sender as FrameworkContentElement;
+            ResultRow row = link == null ? null : link.DataContext as ResultRow;
+            if (row == null)
+                return;
+
+            ResultsList.SelectedItem = row;
+            ChooseRow(row);
         }
 
         private void AlterLink_Click(object sender, RoutedEventArgs e)
@@ -261,7 +316,15 @@ namespace ObjectFinder.Vsix
 
         private void ChooseSelected()
         {
-            ResultRow row = ResultsList.SelectedItem as ResultRow;
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            ChooseRow(ResultsList.SelectedItem as ResultRow);
+        }
+
+        private void ChooseRow(ResultRow row)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
             if (row == null) return;
 
             if (ObjectChosen != null)
