@@ -1,4 +1,5 @@
 ﻿using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
 using System;
 using System.Runtime.InteropServices;
 
@@ -29,7 +30,17 @@ namespace ObjectFinder.Vsix
             // we are not calling Dispose on this object. This is because ToolWindowPane calls Dispose on
             // the object returned by the Content property.
             var view = new SearchView();
+            view.CloseRequested += HideWindow;
             Content = view;
+        }
+
+        private void HideWindow()
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
+            IVsWindowFrame frame = Frame as IVsWindowFrame;
+            if (frame != null)
+                frame.Hide();
         }
     }
 }

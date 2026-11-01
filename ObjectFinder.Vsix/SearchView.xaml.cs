@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -13,17 +15,26 @@ namespace ObjectFinder.Vsix
         private ObjectSearcher _searcher = new ObjectSearcher(new DbObject[0]);
         private string _source = "Select a database in Object Explorer, then press F5.";
         private ObjectExplorerSelection _selection;
+        private CancellationTokenSource _reloadTokenSource;
 
         public SearchView()
         {
             InitializeComponent();
-            Loaded += delegate { FocusSearchBox(); Reload(true); };
+            Loaded += async delegate
+            {
+                FocusSearchBox();
+                await ReloadAsync(true);
+            };
             IsVisibleChanged += OnIsVisibleChanged;
+            PreviewKeyDown += OnViewPreviewKeyDown;
             UpdateResults();
         }
 
         /// <summary>Raised when the user presses Enter or double-clicks a result.</summary>
         public event Action<DbObject> ObjectChosen;
+
+        /// <summary>Raised when the user presses Escape.</summary>
+        public event Action CloseRequested;
 
         public void FocusSearchBox()
         {
@@ -42,16 +53,35 @@ namespace ObjectFinder.Vsix
         /// With keepCurrentOnFailure, a failed refresh (for example a server node is selected) leaves the
         /// previous list in place instead of replacing it with an error message.
         /// </summary>
-        public void Reload(bool keepCurrentOnFailure)
+        public async Task ReloadAsync(bool keepCurrentOnFailure)
         {
+            CancellationTokenSource currentReload = new CancellationTokenSource();
+            CancellationTokenSource previousReload = Interlocked.Exchange(ref _reloadTokenSource, currentReload);
+            if (previousReload != null)
+            {
+                previousReload.Cancel();
+                previousReload.Dispose();
+            }
+
+            CancellationToken cancellationToken = currentReload.Token;
+
             try
             {
                 ObjectExplorerSelection selection = ObjectExplorerBridge.GetSelection();
-                List<DbObject> objects = ObjectExplorerBridge.LoadObjects(selection);
+                List<DbObject> objects = await Task.Run(
+                    delegate { return ObjectExplorerBridge.LoadObjects(selection); },
+                    cancellationToken);
+
+                if (cancellationToken.IsCancellationRequested)
+                    return;
 
                 _searcher = new ObjectSearcher(objects);
                 _selection = selection;
                 _source = selection.DatabaseName + " on " + selection.ServerName + ": " + objects.Count + " objects";
+            }
+            catch (OperationCanceledException)
+            {
+                return;
             }
             catch (Exception ex)
             {
@@ -62,14 +92,33 @@ namespace ObjectFinder.Vsix
                 _selection = null;
                 _source = ex.Message;
             }
+            finally
+            {
+                if (ReferenceEquals(currentReload, _reloadTokenSource))
+                {
+                    _reloadTokenSource = null;
+                    currentReload.Dispose();
+                }
+            }
 
             UpdateResults();
         }
 
-        private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        private async void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
         {
             if ((bool)e.NewValue)
-                Reload(true);
+                await ReloadAsync(true);
+        }
+
+        private void OnViewPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Escape || Keyboard.Modifiers != ModifierKeys.None)
+                return;
+
+            e.Handled = true;
+            Action handler = CloseRequested;
+            if (handler != null)
+                handler();
         }
 
         private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
@@ -77,14 +126,17 @@ namespace ObjectFinder.Vsix
             UpdateResults();
         }
 
-        private void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
+        private async void SearchBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
             switch (e.Key)
             {
                 case Key.Down: MoveSelection(1); e.Handled = true; break;
                 case Key.Up: MoveSelection(-1); e.Handled = true; break;
                 case Key.Enter: ChooseSelected(); e.Handled = true; break;
-                case Key.F5: Reload(false); e.Handled = true; break;
+                case Key.F5:
+                    e.Handled = true;
+                    await ReloadAsync(false);
+                    break;
             }
         }
 
@@ -96,13 +148,6 @@ namespace ObjectFinder.Vsix
         private void UpdateResults()
         {
             string query = SearchBox.Text;
-
-            if (query.Trim() == "!diag")
-            {
-                ObjectExplorerDiagnostics.Run();
-                StatusText.Text = "Diagnostics written to " + DiagLog.FilePath;
-                return;
-            }
 
             if (string.IsNullOrWhiteSpace(query))
             {
@@ -146,6 +191,15 @@ namespace ObjectFinder.Vsix
                 return;
             }
 
+            StatusText.Text = "Selecting " + row.Object.FullName
+                + " in Object Explorer... (large folders can take a few seconds)";
+            Mouse.OverrideCursor = Cursors.Wait;
+
+            // Let WPF paint the message before the UI thread blocks inside Object Explorer.
+#pragma warning disable VSTHRD001 // Deliberate: the next call blocks the UI thread for seconds.
+            Dispatcher.Invoke(new Action(delegate { }), System.Windows.Threading.DispatcherPriority.Render);
+#pragma warning restore VSTHRD001
+
             try
             {
                 ObjectExplorerBridge.Reveal(_selection, row.Object);
@@ -155,11 +209,15 @@ namespace ObjectFinder.Vsix
             {
                 StatusText.Text = ex.Message;
             }
+            finally
+            {
+                Mouse.OverrideCursor = null;
+            }
         }
 
-        public void Activate()
+        public async void Activate()
         {
-            Reload(true);
+            await ReloadAsync(true);
 
 #pragma warning disable VSTHRD001 // Deliberate: Input priority runs after the window frame has finished showing.
             _ = Dispatcher.BeginInvoke(

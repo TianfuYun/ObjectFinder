@@ -22,8 +22,32 @@ namespace ObjectFinder.Vsix
         {
             await base.InitializeAsync(cancellationToken, progress);
 
-            await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
-            await ObjectFinder.Vsix.ObjectFinderToolWindowCommand.InitializeAsync(this);
+            try
+            {
+                await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
+                await ObjectFinder.Vsix.ObjectFinderToolWindowCommand.InitializeAsync(this);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+            }
+            catch (Exception ex)
+            {
+                await LogInitializationFailureAsync(ex);
+            }
+        }
+
+        private async Task LogInitializationFailureAsync(Exception ex)
+        {
+            await JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            IVsActivityLog activityLog = await GetServiceAsync(typeof(SVsActivityLog)) as IVsActivityLog;
+            if (activityLog != null)
+            {
+                activityLog.LogEntry(
+                    (uint)__ACTIVITYLOG_ENTRYTYPE.ALE_ERROR,
+                    nameof(ObjectFinderPackage),
+                    "ObjectFinder failed to initialize: " + ex);
+            }
         }
     }
 }
