@@ -16,6 +16,7 @@ namespace ObjectFinder.Vsix
         private string _source = "Select a database in Object Explorer, then press F5.";
         private ObjectExplorerSelection _selection;
         private CancellationTokenSource _reloadTokenSource;
+        private readonly SemaphoreSlim _reloadGate = new SemaphoreSlim(1, 1);
 
         public SearchView()
         {
@@ -67,8 +68,12 @@ namespace ObjectFinder.Vsix
 
             CancellationToken cancellationToken = currentReload.Token;
 
+            await _reloadGate.WaitAsync();
             try
             {
+                if (cancellationToken.IsCancellationRequested)
+                    return;
+
                 ObjectExplorerSelection selection = ObjectExplorerBridge.GetSelection();
                 List<DbObject> objects = await Task.Run(
                     delegate { return ObjectExplorerBridge.LoadObjects(selection); },
@@ -96,6 +101,8 @@ namespace ObjectFinder.Vsix
             }
             finally
             {
+                _reloadGate.Release();
+
                 if (ReferenceEquals(currentReload, _reloadTokenSource))
                 {
                     _reloadTokenSource = null;
