@@ -3,6 +3,7 @@
   <PropertyGroup>
     <VSSDKBuildToolsAutoSetup>true</VSSDKBuildToolsAutoSetup>
     <TargetFramework>net48</TargetFramework>
+    <TargetVsixContainerName>ObjectFinder.vsix</TargetVsixContainerName>
     <GeneratePkgDefFile>true</GeneratePkgDefFile>
     <UseCodebase>true</UseCodebase>
     <IncludeAssemblyInVSIXContainer>true</IncludeAssemblyInVSIXContainer>
