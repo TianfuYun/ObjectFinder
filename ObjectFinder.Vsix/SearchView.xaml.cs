@@ -280,9 +280,11 @@ namespace ObjectFinder.Vsix
             Dispatcher.Invoke(new Action(delegate { }), System.Windows.Threading.DispatcherPriority.Render);
 #pragma warning restore VSTHRD001
 
+            bool opened = false;
             try
             {
                 ObjectExplorerBridge.OpenScriptInNewQuery(_selection, target, alter);
+                opened = true;
                 StatusText.Text = verb + " script opened for " + target.FullName + ".";
             }
             catch (Exception ex)
@@ -293,6 +295,9 @@ namespace ObjectFinder.Vsix
             {
                 Mouse.OverrideCursor = null;
             }
+
+            if (opened)
+                RequestClose();
         }
 
         private void UpdateResults()
