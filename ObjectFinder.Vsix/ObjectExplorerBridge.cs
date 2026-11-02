@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
 using EnvDTE;
+using Microsoft.SqlServer.TransactSql.ScriptDom;
 using Microsoft.VisualStudio.Shell;
 using ObjectFinder.Core;
 
@@ -284,26 +285,47 @@ namespace ObjectFinder.Vsix
 
         private static string ConvertCreateToAlter(string createScript)
         {
-            return Regex.Replace(
-                createScript,
-                @"\bCREATE\b",
-                "ALTER",
-                RegexOptions.IgnoreCase,
-                TimeSpan.FromMilliseconds(200));
+            int createOffset;
+            if (!TryFindFirstCreateTokenOffset(createScript, out createOffset))
+                return createScript;
+
+            return createScript.Substring(0, createOffset)
+                + "ALTER"
+                + createScript.Substring(createOffset + "CREATE".Length);
         }
 
         private static string TrimToCreateStatement(string script)
         {
-            Match match = Regex.Match(
-                script,
-                @"\bCREATE\b",
-                RegexOptions.IgnoreCase,
-                TimeSpan.FromMilliseconds(200));
-
-            if (!match.Success)
+            int createOffset;
+            if (!TryFindFirstCreateTokenOffset(script, out createOffset))
                 return script;
 
-            return script.Substring(match.Index).TrimStart();
+            return script.Substring(createOffset).TrimStart();
+        }
+
+        private static bool TryFindFirstCreateTokenOffset(string script, out int createOffset)
+        {
+            createOffset = -1;
+            if (string.IsNullOrWhiteSpace(script))
+                return false;
+
+            IList<ParseError> errors;
+            IList<TSqlParserToken> tokens = new TSql160Parser(false)
+                .GetTokenStream(new StringReader(script), out errors);
+
+            if (tokens == null)
+                return false;
+
+            foreach (TSqlParserToken token in tokens)
+            {
+                if (token.TokenType == TSqlTokenType.Create)
+                {
+                    createOffset = token.Offset;
+                    return createOffset >= 0;
+                }
+            }
+
+            return false;
         }
 
         private static string SanitizeFilePart(string text)
